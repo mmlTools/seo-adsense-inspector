@@ -1,0 +1,201 @@
+{
+  "name": "seo-adsense-inspector",
+  "displayName": "SEO AdSense Compliance Inspector",
+  "description": "AI-powered SEO, AdSense compliance, schema, and Core Web Vitals inspector for HTML, PHP/CI4, React/JSX, Vue, Svelte, and Markdown. Includes 'Simulate Google AdSense Review' and one-click AI fixes via the VS Code Language Model API.",
+  "version": "1.0.3",
+  "publisher": "MMLTECH",
+  "homepage": "https://streamrsc.com",
+  "pricing": "Free",
+  "sponsor": {
+    "url": "https://paypal.me/mmltools"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mmlTools/seo-adsense-inspector.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mmlTools/seo-adsense-inspector/issues"
+  },
+  "icon": "media/icon.png",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Linters",
+    "Other"
+  ],
+  "galleryBanner": {
+    "color": "#4F46E5",
+    "theme": "dark"
+  },
+  "qna": "marketplace",
+  "keywords": [
+    "seo",
+    "adsense",
+    "schema",
+    "core web vitals",
+    "blog",
+    "wordpress",
+    "codeigniter",
+    "ci4",
+    "react",
+    "ai"
+  ],
+  "activationEvents": [
+    "onLanguage:html",
+    "onLanguage:php",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescriptreact",
+    "onLanguage:markdown",
+    "onLanguage:vue",
+    "onLanguage:svelte"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "seoAdsense.scanFile",
+        "title": "SEO/AdSense: Scan Current File",
+        "category": "SEO/AdSense"
+      },
+      {
+        "command": "seoAdsense.scanWorkspace",
+        "title": "SEO/AdSense: Scan Entire Workspace",
+        "category": "SEO/AdSense"
+      },
+      {
+        "command": "seoAdsense.simulateAdSenseReview",
+        "title": "SEO/AdSense: Simulate Google AdSense Review",
+        "category": "SEO/AdSense"
+      },
+      {
+        "command": "seoAdsense.fixAllWithAI",
+        "title": "SEO/AdSense: Fix All Issues with AI",
+        "category": "SEO/AdSense"
+      },
+      {
+        "command": "seoAdsense.showReport",
+        "title": "SEO/AdSense: Show Report for Current File",
+        "category": "SEO/AdSense",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "seoAdsense.detectAiWritten",
+        "title": "SEO/AdSense: Detect AI-Written Likelihood",
+        "category": "SEO/AdSense",
+        "icon": "$(sparkle)"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "seoAdsense.showReport",
+          "when": "resourceLangId == html || resourceLangId == php || resourceLangId == markdown || resourceLangId == javascriptreact || resourceLangId == typescriptreact || resourceLangId == vue || resourceLangId == svelte",
+          "group": "navigation@1"
+        },
+        {
+          "command": "seoAdsense.detectAiWritten",
+          "when": "resourceLangId == html || resourceLangId == php || resourceLangId == markdown",
+          "group": "navigation@2"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "seoAdsense.simulateAdSenseReview",
+          "when": "resourceLangId == html || resourceLangId == php || resourceLangId == markdown",
+          "group": "seoAdsense"
+        },
+        {
+          "command": "seoAdsense.scanFile",
+          "when": "resourceLangId == html || resourceLangId == php || resourceLangId == markdown || resourceLangId == javascriptreact || resourceLangId == typescriptreact",
+          "group": "seoAdsense"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "SEO + AdSense Inspector",
+      "properties": {
+        "seoAdsense.minWordCount": {
+          "type": "number",
+          "default": 300,
+          "description": "Minimum word count below which content is flagged as thin (AdSense risk)."
+        },
+        "seoAdsense.recommendedWordCount": {
+          "type": "number",
+          "default": 800,
+          "description": "Recommended minimum word count for in-depth articles."
+        },
+        "seoAdsense.minInternalLinks": {
+          "type": "number",
+          "default": 2,
+          "description": "Minimum recommended internal links per article."
+        },
+        "seoAdsense.metaDescriptionMin": {
+          "type": "number",
+          "default": 120,
+          "description": "Minimum recommended meta description length (characters)."
+        },
+        "seoAdsense.metaDescriptionMax": {
+          "type": "number",
+          "default": 160,
+          "description": "Maximum recommended meta description length (characters)."
+        },
+        "seoAdsense.titleMin": {
+          "type": "number",
+          "default": 30,
+          "description": "Minimum recommended <title> length (characters)."
+        },
+        "seoAdsense.titleMax": {
+          "type": "number",
+          "default": 60,
+          "description": "Maximum recommended <title> length (characters)."
+        },
+        "seoAdsense.enableAutoScan": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically scan files on open, save, and edit."
+        },
+        "seoAdsense.languageModel": {
+          "type": "string",
+          "default": "auto",
+          "enum": [
+            "auto",
+            "copilot-gpt-4o",
+            "copilot-gpt-4",
+            "copilot-claude-3.5-sonnet"
+          ],
+          "description": "Preferred language model for AI fixes. 'auto' picks the best available."
+        },
+        "seoAdsense.checkAdSensePolicy": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable AdSense policy compliance checks."
+        },
+        "seoAdsense.checkSchema": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Schema.org / JSON-LD checks."
+        },
+        "seoAdsense.checkCWV": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Core Web Vitals risk checks (CLS, LCP, etc.)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.130",
+    "@types/vscode": "~1.90.0",
+    "@vscode/vsce": "^3.9.1",
+    "typescript": "^5.9.3"
+  }
+}
