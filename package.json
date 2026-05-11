@@ -2,7 +2,7 @@
   "name": "seo-adsense-inspector",
   "displayName": "SEO AdSense Compliance Inspector",
   "description": "AI-powered SEO, AdSense compliance, schema, and Core Web Vitals inspector for HTML, PHP/CI4, React/JSX, Vue, Svelte, and Markdown. Includes 'Simulate Google AdSense Review' and one-click AI fixes via the VS Code Language Model API.",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "publisher": "MMLTECH",
   "homepage": "https://streamrsc.com",
   "pricing": "Free",

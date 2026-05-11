@@ -5,6 +5,9 @@ import { extractMainContent, wordCount } from '../utils/htmlUtils';
 import { Issue } from '../types';
 
 let currentPanel: vscode.WebviewPanel | null = null;
+let lastReport: ReportData | null = null;
+let lastVerdict: LLMVerdict | null = null;
+let lastFileName: string | null = null;
 
 interface ReportData {
     fileName: string;
@@ -64,6 +67,8 @@ export async function openAdSenseReviewPanel(
                 editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
             } else if (msg.type === 'openSettings') {
                 vscode.commands.executeCommand('workbench.action.openSettings', 'seoAdsense');
+            } else if (msg.type === 'exportPdf') {
+                await exportReportAsPdf();
             }
         });
     }
@@ -82,19 +87,54 @@ async function runReview(document: vscode.TextDocument): Promise<void> {
     const words = wordCount(text);
 
     const report = buildReport(issues, document, words);
+    lastReport = report;
+    lastVerdict = null;
+    lastFileName = document.fileName;
 
     currentPanel.webview.html = renderReport(report, null, document.fileName);
 
     try {
         const verdict = await generateLLMVerdict(document, report);
+        lastVerdict = verdict;
         if (currentPanel) {
             currentPanel.webview.html = renderReport(report, verdict, document.fileName);
         }
     } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
+        lastVerdict = { error: msg };
         if (currentPanel) {
-            currentPanel.webview.html = renderReport(report, { error: msg }, document.fileName);
+            currentPanel.webview.html = renderReport(report, lastVerdict, document.fileName);
         }
+    }
+}
+
+async function exportReportAsPdf(): Promise<void> {
+    if (!lastReport || !lastFileName) {
+        vscode.window.showWarningMessage('No report to export yet.');
+        return;
+    }
+
+    const defaultName = basename(lastFileName).replace(/\.[^.]+$/, '') + '-adsense-report.html';
+    const target = await vscode.window.showSaveDialog({
+        title: 'Save AdSense report (open in browser → print → Save as PDF)',
+        defaultUri: vscode.Uri.file(defaultName),
+        filters: { 'HTML (open & print to PDF)': ['html'] }
+    });
+    if (!target) return;
+
+    const html = renderStandaloneReport(lastReport, lastVerdict, lastFileName);
+    await vscode.workspace.fs.writeFile(target, Buffer.from(html, 'utf8'));
+
+    const choice = await vscode.window.showInformationMessage(
+        'Report saved. Open it in your browser? The print dialog will appear automatically — choose "Save as PDF" as the destination.',
+        'Open in Browser',
+        'Reveal in Explorer',
+        'Dismiss'
+    );
+    if (choice === 'Open in Browser') {
+        await vscode.env.openExternal(target);
+    } else if (choice === 'Reveal in Explorer') {
+        await vscode.commands.executeCommand('revealFileInOS', target);
     }
 }
 
@@ -246,6 +286,7 @@ function renderReport(report: ReportData, llmVerdict: LLMVerdict | null, fileNam
   <div class="verdict-row">
     <div class="verdict-pill ${verdictClass(report.verdict)}">${escape(report.verdict)}</div>
     <button class="btn" data-action="rerun">↻ Re-run</button>
+    <button class="btn" data-action="exportPdf">📄 Export PDF</button>
     <button class="btn" data-action="openSettings">⚙ Settings</button>
   </div>
 
@@ -390,6 +431,154 @@ function escape(s: unknown): string {
 
 function basename(p: string): string {
     return String(p).split(/[\\/]/).pop() || '';
+}
+
+/**
+ * Build a self-contained HTML report that opens in any browser, uses light-mode
+ * print-friendly styling, and auto-triggers the print dialog so the user can
+ * "Save as PDF" via their browser's print destination.
+ */
+function renderStandaloneReport(report: ReportData, llmVerdict: LLMVerdict | null, fileName: string): string {
+    const scoreColor =
+        report.score >= 85 ? '#16a34a' :
+        report.score >= 65 ? '#d97706' :
+        '#dc2626';
+
+    const llmSection = llmVerdict
+        ? renderLLMVerdict(llmVerdict)
+        : '<div class="card"><p class="muted">AI verdict was not generated for this report.</p></div>';
+
+    const generatedAt = new Date().toLocaleString();
+
+    return `<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<title>AdSense Review Report — ${escape(basename(fileName))}</title>
+${printStyles()}
+</head>
+<body>
+<div class="container">
+  <header class="hero">
+    <div>
+      <div class="eyebrow">SIMULATED ADSENSE REVIEW</div>
+      <h1>${escape(basename(fileName))}</h1>
+      <p class="muted">${report.wordCount} words · ${report.issues.length} issues · generated ${escape(generatedAt)}</p>
+    </div>
+    <div class="score-block">
+      <div class="score" style="color:${scoreColor}">${report.score}</div>
+      <div class="score-label">Readiness</div>
+    </div>
+  </header>
+
+  <div class="verdict-row">
+    <div class="verdict-pill ${verdictClass(report.verdict)}">${escape(report.verdict)}</div>
+    <button class="btn no-print" onclick="window.print()">Print / Save as PDF</button>
+  </div>
+
+  <div class="grid">
+    <div class="stat-card stat-error"><div class="stat-num">${report.errors}</div><div class="stat-label">Errors</div></div>
+    <div class="stat-card stat-warn"><div class="stat-num">${report.warnings}</div><div class="stat-label">Warnings</div></div>
+    <div class="stat-card stat-info"><div class="stat-num">${report.infos}</div><div class="stat-label">Info</div></div>
+    <div class="stat-card"><div class="stat-num">${report.wordCount}</div><div class="stat-label">Words</div></div>
+  </div>
+
+  <section>
+    <h2>AI Reviewer Verdict</h2>
+    ${llmSection}
+  </section>
+
+  ${renderCategorySection('AdSense Compliance', report.byCategory.adsense, '🛡️')}
+  ${renderCategorySection('Content Quality', report.byCategory.content, '📝')}
+  ${renderCategorySection('SEO', report.byCategory.seo, '🔍')}
+  ${renderCategorySection('Schema / Structured Data', report.byCategory.schema, '🧩')}
+  ${renderCategorySection('Performance / Core Web Vitals', report.byCategory.performance, '⚡')}
+
+  <footer>
+    <p class="muted">Generated by SEO + AdSense Compliance Inspector for VS Code. This is a heuristic simulation, not an official Google review.</p>
+    <p class="muted">File: ${escape(fileName)}</p>
+  </footer>
+</div>
+<script>
+  // Auto-open the print dialog so the user can choose "Save as PDF".
+  window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 350); });
+</script>
+</body></html>`;
+}
+
+/**
+ * Light-mode, print-friendly stylesheet for the standalone PDF-export HTML.
+ * Inlines the same visual structure as the webview but uses fixed colors so it
+ * renders predictably in browsers and on paper.
+ */
+function printStyles(): string {
+    return `<style>
+* { box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  color: #1f2937;
+  background: #ffffff;
+  margin: 0;
+  padding: 0;
+  line-height: 1.5;
+}
+.container { max-width: 920px; margin: 0 auto; padding: 32px 24px; }
+.hero { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-bottom: 16px; border-bottom: 1px solid #e5e7eb; }
+.eyebrow { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: #6b7280; margin-bottom: 4px; }
+h1 { font-size: 22px; margin: 0 0 4px 0; }
+h2 { font-size: 16px; margin-top: 28px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+h4 { margin: 16px 0 6px 0; font-size: 13px; }
+.muted { color: #6b7280; font-size: 12px; }
+.score-block { text-align: right; }
+.score { font-size: 56px; font-weight: 700; line-height: 1; }
+.score-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; }
+.verdict-row { display: flex; gap: 8px; align-items: center; margin: 12px 0 24px 0; }
+.verdict-pill { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.pill-green { background: rgba(22, 163, 74, 0.15); color: #16a34a; }
+.pill-yellow { background: rgba(217, 119, 6, 0.15); color: #d97706; }
+.pill-red { background: rgba(220, 38, 38, 0.15); color: #dc2626; }
+.pill-neutral { background: #e5e7eb; color: #374151; }
+.btn { background: #f3f4f6; color: #111827; border: 1px solid #d1d5db; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.stat-card { background: #f9fafb; border: 1px solid #e5e7eb; padding: 16px; border-radius: 6px; text-align: center; }
+.stat-num { font-size: 28px; font-weight: 700; }
+.stat-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: #6b7280; }
+.stat-error .stat-num { color: #dc2626; }
+.stat-warn .stat-num { color: #d97706; }
+.stat-info .stat-num { color: #2563eb; }
+.card { background: #f9fafb; border: 1px solid #e5e7eb; padding: 16px; border-radius: 6px; margin-bottom: 12px; }
+.card.pass { border-color: #16a34a; }
+.card.warn { border-color: #d97706; }
+.card .check { color: #16a34a; font-weight: 700; margin-right: 6px; }
+.verdict-card .summary { font-size: 14px; margin: 12px 0; }
+.verdict-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.verdict-cols ul, .actions, .policies { margin: 0; padding-left: 18px; }
+.pros li { color: #15803d; }
+.cons li { color: #b45309; }
+.count { font-size: 11px; background: #e5e7eb; color: #374151; padding: 2px 8px; border-radius: 999px; font-weight: 500; }
+.issue-list { list-style: none; padding: 0; margin: 0; }
+.issue { background: #f9fafb; border: 1px solid #e5e7eb; border-left-width: 3px; padding: 10px 14px; border-radius: 4px; margin-bottom: 6px; page-break-inside: avoid; }
+.issue-error { border-left-color: #dc2626; }
+.issue-warn { border-left-color: #d97706; }
+.issue-info { border-left-color: #2563eb; }
+.issue-hint { border-left-color: #6b7280; }
+.issue-head { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.issue-msg { margin-top: 4px; font-size: 13px; }
+.badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 3px; letter-spacing: 0.05em; color: #fff; }
+.badge-error { background: #dc2626; }
+.badge-warn { background: #d97706; }
+.badge-info { background: #2563eb; }
+.badge-hint { background: #6b7280; }
+.issue-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #6b7280; }
+.issue-loc { margin-left: auto; color: #6b7280; }
+footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; }
+pre { background: #f3f4f6; padding: 12px; border-radius: 4px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; }
+section { page-break-inside: avoid; }
+@media print {
+  body { background: #fff; }
+  .no-print { display: none !important; }
+  .container { padding: 12px; max-width: none; }
+  a { color: inherit; text-decoration: none; }
+}
+</style>`;
 }
 
 function baseStyles(): string {
